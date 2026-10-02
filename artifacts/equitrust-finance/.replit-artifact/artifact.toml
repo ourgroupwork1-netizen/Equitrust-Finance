@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Equitrust Finance"
+description = "A cooperative finance platform prototype for member banking, transparent transaction records, credit and loan applications, AI-assisted fraud review, and administrator controls. Financial transfers are simulated until a licensed banking provider is connected."
+version = "1.0.0"
+id = "artifacts/equitrust-finance"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18216
+
+[services.development]
+run = "pnpm --filter @workspace/equitrust-finance run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/equitrust-finance", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/equitrust-finance/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18216"
+BASE_PATH = "/"
