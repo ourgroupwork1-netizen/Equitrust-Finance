@@ -6,19 +6,29 @@ import {
   membersTable,
   transactionsTable,
 } from "@workspace/db";
+import {
+  analyzeTransactionSignals,
+  FraudAnalysisUnavailableError,
+  MAX_AI_ACCOUNTS_PER_SCAN,
+  OPENAI_FRAUD_MODEL,
+  type AnonymizedAccountSignal,
+} from "./openaiFraudAnalysis";
 
-const METHOD = "Transparent rules-based anomaly screening";
 const DISCLAIMER =
-  "Risk indicators are not proof of fraud. This scan does not block accounts or make lending decisions; an administrator must review any action.";
+  "AI scores are review-priority indicators, not fraud probabilities or proof. Up to 100 recently active accounts and 50 recent transactions per account are considered. Only transaction type, amount, approximate age, and prior review status are sent to OpenAI; names, emails, descriptions, account IDs, and transaction references are excluded. OpenAI API charges may apply. Findings never block accounts or decide loans; an administrator must review any action.";
+const RULES_ONLY_DISCLAIMER =
+  "This transparent rules-based screen is not AI and does not determine fraud. No transaction data was sent to an AI provider. Findings never block accounts or decide loans; an administrator must review any action.";
 
 type DetectionInput = {
   memberId?: string;
   initiatedByMemberId: string;
+  useAi: boolean;
 };
 
 export async function runFraudDetection({
   memberId,
   initiatedByMemberId,
+  useAi,
 }: DetectionInput) {
   let accountQuery = db
     .select({
@@ -134,12 +144,97 @@ export async function runFraudDetection({
     })
     .filter((finding) => finding.score >= 25);
 
+  const accountById = new Map(
+    accountRows.map((account) => [account.accountId, account]),
+  );
+  const selectedEntries = useAi
+    ? [...byAccount.entries()]
+        .sort(
+          (a, b) =>
+            b[1][0].createdAt.getTime() - a[1][0].createdAt.getTime(),
+        )
+        .slice(0, MAX_AI_ACCOUNTS_PER_SCAN)
+    : [];
+  const scanTime = Date.now();
+  const aiAccounts: AnonymizedAccountSignal[] = selectedEntries.map(
+    ([, transactions], accountRef) => ({
+      accountRef,
+      transactions: transactions.map((transaction) => ({
+        type: transaction.type,
+        amountCents: transaction.amountCents,
+        minutesAgo: Math.max(
+          0,
+          Math.floor(
+            (scanTime - transaction.createdAt.getTime()) / 60_000,
+          ),
+        ),
+        previouslyFlagged: transaction.status === "flagged",
+      })),
+    }),
+  );
+
+  let aiFindings;
+  try {
+    aiFindings = useAi
+      ? await analyzeTransactionSignals(aiAccounts)
+      : [];
+  } catch (error) {
+    if (error instanceof FraudAnalysisUnavailableError) throw error;
+    throw new FraudAnalysisUnavailableError(502);
+  }
+
+  const findingsByMemberId = new Map(
+    findings.map((finding) => [finding.memberId, finding]),
+  );
+  for (const aiFinding of aiFindings) {
+    const [accountId] = selectedEntries[aiFinding.accountRef] ?? [];
+    const account = accountId ? accountById.get(accountId) : undefined;
+    if (!account) throw new FraudAnalysisUnavailableError(502);
+
+    const existing = findingsByMemberId.get(account.memberId);
+    const riskLevel: "review" | "high" =
+      Math.max(existing?.score ?? 0, aiFinding.score) >= 70
+        ? "high"
+        : "review";
+    const aiReasons = aiFinding.reasons.map(
+      (reason) => `AI review: ${reason}`,
+    );
+
+    if (existing) {
+      existing.score = Math.max(existing.score, aiFinding.score);
+      existing.riskLevel = riskLevel;
+      existing.reasons = [...new Set([...existing.reasons, ...aiReasons])].slice(
+        0,
+        6,
+      );
+    } else {
+      const finding = {
+        memberId: account.memberId,
+        displayName: account.displayName,
+        email: account.email,
+        riskLevel,
+        score: aiFinding.score,
+        reasons: aiReasons,
+        transactionCount: byAccount.get(accountId)?.length ?? 0,
+      };
+      findings.push(finding);
+      findingsByMemberId.set(account.memberId, finding);
+    }
+  }
+
+  const method = !useAi
+    ? "Transparent rules-based anomaly screening; no AI request was made."
+    : aiAccounts.length
+      ? `OpenAI ${OPENAI_FRAUD_MODEL} review plus transparent rules-based checks; AI reviewed up to ${MAX_AI_ACCOUNTS_PER_SCAN} most recently active accounts.`
+      : "No recent transactions were available; no OpenAI request was made. Rules-based checks only.";
+  const disclaimer = useAi ? DISCLAIMER : RULES_ONLY_DISCLAIMER;
+
   const result = {
     scannedAccounts: accountRows.length,
     scannedTransactions: transactionRows.length,
     findings,
-    method: METHOD,
-    disclaimer: DISCLAIMER,
+    method,
+    disclaimer,
     createdAt: new Date(),
   };
 
@@ -148,8 +243,8 @@ export async function runFraudDetection({
     scannedAccounts: result.scannedAccounts,
     scannedTransactions: result.scannedTransactions,
     findings,
-    method: METHOD,
-    disclaimer: DISCLAIMER,
+    method,
+    disclaimer,
   });
 
   return result;

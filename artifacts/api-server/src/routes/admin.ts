@@ -34,7 +34,10 @@ import {
   platformSettingsTable,
   transactionsTable,
 } from "@workspace/db";
-import { runFraudDetection } from "../lib/fraudDetection";
+import {
+  FraudAnalysisUnavailableError,
+  runFraudDetection,
+} from "../lib/fraudDetection";
 import {
   memberIdFromRequest,
   requireAdmin,
@@ -283,10 +286,23 @@ router.patch(
 );
 
 router.post("/admin/fraud-scan", async (req, res): Promise<void> => {
-  const results = await runFraudDetection({
-    initiatedByMemberId: memberIdFromRequest(req),
-  });
-  res.json(RunAdminFraudScanResponse.parse(results));
+  try {
+    const results = await runFraudDetection({
+      initiatedByMemberId: memberIdFromRequest(req),
+      useAi: true,
+    });
+    res.json(RunAdminFraudScanResponse.parse(results));
+  } catch (error) {
+    if (!(error instanceof FraudAnalysisUnavailableError)) throw error;
+    req.log.error(
+      { statusCode: error.statusCode },
+      "OpenAI fraud review could not be completed",
+    );
+    res.status(error.statusCode).json({
+      error:
+        "OpenAI analysis failed. No scan report was saved; check API access and try again.",
+    });
+  }
 });
 
 router.get("/admin/admins", async (_req, res): Promise<void> => {

@@ -146,7 +146,7 @@ paths:
     post:
       operationId: runFraudScan
       tags: [finance]
-      summary: Run a transparent automated anomaly scan on recent transactions
+      summary: Run a transparent rules-based anomaly scan on the signed-in member's recent transactions
       responses:
         "200":
           description: Risk review results
@@ -286,7 +286,7 @@ paths:
     post:
       operationId: runAdminFraudScan
       tags: [admin]
-      summary: Scan recent platform transactions for risk indicators
+      summary: Run an OpenAI-assisted review of anonymized recent platform transaction patterns
       responses:
         "200":
           description: Platform risk review results
@@ -298,6 +298,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "502":
+          $ref: "#/components/responses/OpenAIUnavailable"
+        "503":
+          $ref: "#/components/responses/OpenAIUnavailable"
   /admin/admins:
     get:
       operationId: listAdministrators
@@ -383,6 +387,12 @@ components:
             $ref: "#/components/schemas/Error"
     NotFound:
       description: The requested record was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    OpenAIUnavailable:
+      description: OpenAI analysis could not be completed; no scan report was saved
       content:
         application/json:
           schema:

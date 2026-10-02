@@ -296,6 +296,7 @@ router.post("/finance/fraud-scan", async (req, res): Promise<void> => {
   const results = await runFraudDetection({
     memberId: memberIdFromRequest(req),
     initiatedByMemberId: memberIdFromRequest(req),
+    useAi: false,
   });
   res.json(RunFraudScanResponse.parse(results));
 });
