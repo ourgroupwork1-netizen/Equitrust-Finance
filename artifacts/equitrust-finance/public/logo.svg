@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 188 44" fill="none">
+  <rect width="44" height="44" rx="12" fill="#285E4E"/>
+  <path d="M11 31h22M14 28V17m5 11V17m6 11V17m5 11V17M11 15l11-6 11 6H11Z" stroke="#F3C574" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="55" y="20" fill="#203D35" font-family="DM Sans, sans-serif" font-size="15" font-weight="700">Equitrust</text>
+  <text x="55" y="35" fill="#60766A" font-family="DM Sans, sans-serif" font-size="12">Finance</text>
+</svg>

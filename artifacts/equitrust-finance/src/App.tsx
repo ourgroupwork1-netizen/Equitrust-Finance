@@ -1,62 +1,223 @@
-import { type ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { ClerkProvider, SignIn, SignUp, Show, useClerk, useUser } from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
+import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation } from 'wouter';
+import {
+  useGetFinanceDashboard, useListTransactions, useCreateTransaction, useGetTransaction,
+  useListLoanApplications, useCreateLoanApplication, useRunFraudScan, useGetPlatformSettings,
+  useGetAdminOverview, useListMembers, useUpdateMemberStatus, useListAdminLoanApplications,
+  useDecideLoanApplication, useRunAdminFraudScan, useListAdministrators, useGrantAdministrator,
+  useUpdatePlatformSettings, getGetFinanceDashboardQueryKey, getListTransactionsQueryKey,
+  getListLoanApplicationsQueryKey, getGetAdminOverviewQueryKey, getListMembersQueryKey,
+  getListAdminLoanApplicationsQueryKey, getListAdministratorsQueryKey,
+  getGetPlatformSettingsQueryKey, getGetTransactionQueryKey,
+} from '@workspace/api-client-react';
+import type { AdminMember, Transaction, LoanApplication, PlatformSettings, FraudScanResult } from '@workspace/api-client-react';
+import {
+  ArrowDownLeft, ArrowRight, ArrowUpRight, BadgeCheck, Banknote, Bell, ChevronDown, CircleHelp,
+  Download, FileText, HandCoins, Landmark, LayoutDashboard, LogOut, Menu, RefreshCw, Shield,
+  ShieldAlert, Users, Wallet, X, Check, Search, UserRoundPlus, Activity,
+} from 'lucide-react';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
-import {
-  Route,
-  Switch,
-  useLocation,
-  Router as WouterRouter,
-} from 'wouter';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 15_000, retry: 1 } } });
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const clerkPubKey = publishableKeyFromHost(window.location.hostname, import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+function stripBase(path: string) { return basePath && path.startsWith(basePath) ? path.slice(basePath.length) || '/' : path; }
+if (!clerkPubKey) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in .env file');
+const appearance = {
+  theme: shadcn, cssLayerName: 'clerk',
+  options: { logoPlacement: 'inside' as const, logoLinkUrl: basePath || '/', logoImageUrl: `${window.location.origin}${basePath}/logo.svg`, socialButtonsPlacement: 'top' as const, socialButtonsVariant: 'blockButton' as const },
+  variables: { colorPrimary: '#285e4e', colorForeground: '#203d35', colorMutedForeground: '#73847d', colorDanger: '#a84c45', colorBackground: '#fbfaf5', colorInput: '#fffefa', colorInputForeground: '#203d35', colorNeutral: '#d8ded6', fontFamily: 'DM Sans, sans-serif', borderRadius: '12px' },
+  elements: {
+    rootBox: 'w-full flex justify-center', cardBox: 'bg-[#fbfaf5] rounded-2xl w-[440px] max-w-full overflow-hidden shadow-xl',
+    card: '!shadow-none !border-0 !bg-transparent !rounded-none', footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    headerTitle: 'text-[#203d35] font-semibold', headerSubtitle: 'text-[#73847d]', socialButtonsBlockButtonText: 'text-[#203d35]',
+    formFieldLabel: 'text-[#203d35]', footerActionLink: 'text-[#285e4e]', footerActionText: 'text-[#73847d]', dividerText: 'text-[#73847d]',
+    identityPreviewEditButton: 'text-[#285e4e]', formFieldSuccessText: 'text-[#285e4e]', alertText: 'text-[#a84c45]',
+    logoBox: 'mb-2', logoImage: 'max-h-10', socialButtonsBlockButton: 'border-[#d8ded6] bg-[#fffefa]',
+    formButtonPrimary: 'bg-[#285e4e] hover:bg-[#214d40]', formFieldInput: 'bg-[#fffefa] border-[#d8ded6] text-[#203d35]',
+    footerAction: 'text-[#73847d]', dividerLine: 'bg-[#d8ded6]', alert: 'bg-[#fbefed]', otpCodeFieldInput: 'bg-[#fffefa]',
+    formFieldRow: 'text-[#203d35]', main: 'text-[#203d35]',
+  },
+};
 
+const money = (cents: number | undefined) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100);
+const date = (value: string) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
+const titleCase = (s: string) => s.replaceAll('_', ' ');
+function Logo({ light = false, testId = 'link-brand', name = 'Equitrust Finance' }: { light?: boolean; testId?: string; name?: string }) {
+  return <Link href="/" className={`brand flex items-center gap-2.5 no-underline ${light ? 'text-[#f6f3e9]' : 'text-[#203d35]'}`} data-testid={testId}>
+    <span className={`grid h-9 w-9 place-items-center rounded-xl ${light ? 'bg-[#f3c574] text-[#1f4439]' : 'bg-[#285e4e] text-[#f6f3e9]'}`}><Landmark size={19} strokeWidth={1.8}/></span>
+    <span className="font-bold tracking-[-.04em]">{name === 'Equitrust Finance' ? <>Equitrust <span className="font-normal opacity-75">Finance</span></> : name}</span>
+  </Link>;
+}
+function Button({ children, onClick, kind = 'primary', disabled, testId, type = 'button' }: { children: ReactNode; onClick?: () => void; kind?: 'primary'|'quiet'|'outline'|'danger'; disabled?: boolean; testId: string; type?: 'button'|'submit' }) {
+  return <button type={type} data-testid={testId} onClick={onClick} disabled={disabled} className={`btn btn-${kind} inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}>{children}</button>;
+}
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field-label">{label}{children}</label>; }
+function Notice({ children, tone = 'sand' }: { children: ReactNode; tone?: 'sand'|'green'|'red' }) { return <div className={`notice notice-${tone}`} role="note">{children}</div>; }
+function Loading({ label = 'Loading account details' }: { label?: string }) { return <div className="loading-box" aria-label={label}><span className="skeleton w-36"/><span className="skeleton w-full"/><span className="skeleton w-4/5"/></div>; }
+function QueryError({ retry }: { retry: () => void }) { return <div className="empty-panel"><ShieldAlert size={22}/><strong>We couldn’t load this view.</strong><span>Check your connection and try again.</span><Button kind="outline" testId="button-retry" onClick={retry}><RefreshCw size={15}/> Try again</Button></div>; }
+
+function HomeRedirect() {
+  return <><Show when="signed-in"><Redirect to="/dashboard"/></Show><Show when="signed-out"><Home/></Show></>;
+}
 function Home() {
-  return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Replit Agent is building...
-        </h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your app will appear here once it's ready.
-        </p>
+  const settings = useGetPlatformSettings();
+  return <main className="landing grain">
+     <header className="landing-nav wrap"><Logo name={settings.data?.siteName}/><nav><a href="#how-it-works" data-testid="link-how-it-works">How it works</a><a href="#principles" data-testid="link-our-principles">Our principles</a></nav><div className="flex gap-2"><Link href="/sign-in" className="nav-login" data-testid="link-sign-in">Sign in</Link><Link href="/sign-up" className="nav-join" data-testid="link-sign-up">Join the cooperative <ArrowRight size={15}/></Link></div></header>
+    {settings.data?.announcement && <div className="announcement" data-testid="text-announcement"><Bell size={14}/>{settings.data.announcement}</div>}
+    <section className="hero wrap">
+      <div className="hero-copy page-in"><div className="eyebrow"><span className="eyebrow-dot"/> MEMBER-OWNED FINANCE, MADE CLEAR</div>
+        <h1 className="serif">A stronger future<br/>is a <em>shared</em> one.</h1>
+         <p className="hero-lede">{settings.data?.tagline || 'A cooperative finance experience built to make everyday money tools more understandable, more accessible, and accountable to the people who use them.'}</p>
+        <div className="hero-actions"><Link href="/sign-up" className="button-link" data-testid="link-get-started">Become a member <ArrowRight size={17}/></Link><a className="text-link" href="#how-it-works" data-testid="link-see-how">See how it works <span>↓</span></a></div>
+        <p className="hero-note"><Shield size={14}/> A transparent prototype. No real money moves here.</p>
       </div>
-    </div>
-  );
+      <div className="hero-art" aria-label="Illustration of connected community members and cooperative finance">
+        <div className="art-orbit orbit-one"/><div className="art-orbit orbit-two"/>
+        <div className="art-circle"><div className="art-center"><Landmark size={45}/></div><span className="orbit-label label-a">Shared ownership</span><span className="orbit-label label-b">Clear choices</span><span className="orbit-label label-c">Community first</span>
+          <i className="orb orb-a"/><i className="orb orb-b"/><i className="orb orb-c"/><i className="orb orb-d"/>
+        </div><div className="art-caption mono">OUR STRENGTH IS<br/>WHAT WE BUILD TOGETHER</div>
+      </div>
+    </section>
+    <div className="ticker"><span>MEMBER-LED</span><i/> <span>PLAIN-LANGUAGE TOOLS</span><i/> <span>COMMUNITY CAPITAL</span><i/> <span>BUILT ON TRUST</span><i/> <span>MEMBER-LED</span></div>
+    <section className="intro-section wrap" id="how-it-works"><div className="section-index mono">01 / A DIFFERENT KIND OF FINANCE</div><div><h2 className="serif">Money tools should<br/>make sense to <em>everyone.</em></h2><p>Equitrust brings account visibility, small-dollar credit and community lending into one easy-to-understand place. We believe informed members make stronger cooperatives.</p><Link href="/sign-up" className="inline-arrow" data-testid="link-explore-member-tools">Explore member tools <ArrowRight size={16}/></Link></div></section>
+    <section className="principles-section" id="principles"><div className="wrap principles-inner"><div className="section-index mono">02 / WHAT WE STAND FOR</div><h2 className="serif">Trust is a practice,<br/>not a tagline.</h2><div className="principle-list">
+      {[['01','Clarity before complexity','See balances, activity and choices in plain language. No fine-print surprises.'],['02','Access with dignity','Financial inclusion starts with tools designed around real lives and different starting points.'],['03','Shared prosperity','A cooperative works when its members can participate, understand and shape what comes next.']].map(([n,t,d])=><article key={n}><span className="mono">{n}</span><div><h3>{t}</h3><p>{d}</p></div><ArrowRight size={18}/></article>)}
+    </div></div></section>
+    <section className="simulation-section wrap"><div className="sim-icon"><Activity size={23}/></div><div><div className="section-index mono">A NOTE ON THIS PROTOTYPE</div><h2 className="serif">Practice here. Real money stays put.</h2><p>Equitrust Finance is a simulated experience. Account balances, credit draws, withdrawals and loan decisions shown in this prototype do not represent real funds and do not move money.</p></div><Link href="/sign-in" className="sim-link" data-testid="link-member-signin">Member sign in <ArrowRight size={15}/></Link></section>
+     <footer className="landing-footer wrap"><Logo testId="link-footer-brand" name={settings.data?.siteName}/><span>Cooperative finance, with the people who make it possible.</span><a href={`mailto:${settings.data?.supportEmail || 'support@equitrust.finance'}`} data-testid="link-support-email">{settings.data?.supportEmail || 'Contact support'}</a><span className="mono">{settings.data?.siteName || 'EQUITRUST FINANCE'}</span></footer>
+  </main>;
 }
 
-function Router() {
-  return (
-    // Keep a shared shell (sidebar, navbar) outside the boundary so it
-    // survives a page crash.
-    <RoutedErrorBoundary>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route component={NotFound} />
-      </Switch>
-    </RoutedErrorBoundary>
-  );
-}
+function SignInPage() { return <div className="auth-page"><div className="auth-side"><Logo light/><div><div className="eyebrow light-eye">MEMBER ACCESS</div><h1 className="serif">Your community.<br/>Your financial picture.</h1><p>Sign in to see your account, explore member tools and take part in a more inclusive cooperative.</p><div className="auth-disclosure"><Shield size={15}/> Prototype only. No real money movement.</div></div><span className="mono">EQUITRUST FINANCE · MEMBER-OWNED</span></div><div className="auth-main"><SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} forceRedirectUrl={`${basePath}/dashboard`} signUpForceRedirectUrl={`${basePath}/dashboard`} /></div></div>; }
+function SignUpPage() { return <div className="auth-page"><div className="auth-side"><Logo light/><div><div className="eyebrow light-eye">JOIN THE COOPERATIVE</div><h1 className="serif">Good finance<br/>grows <em>together.</em></h1><p>Create your member account and see what clear, community-centered financial tools can feel like.</p><div className="auth-disclosure"><Shield size={15}/> Prototype only. No real money movement.</div></div><span className="mono">EQUITRUST FINANCE · MEMBER-OWNED</span></div><div className="auth-main"><SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} forceRedirectUrl={`${basePath}/dashboard`} /></div></div>; }
 
-function RoutedErrorBoundary({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
-  return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
+const navItems = [{ href:'/dashboard', label:'Overview', icon:LayoutDashboard },{ href:'/activity', label:'Activity', icon:Activity },{ href:'/loans', label:'Loans', icon:HandCoins },{ href:'/admin', label:'Operations', icon:Shield }];
+function AppShell({ children, active }: { children: ReactNode; active: string }) {
+  const [location] = useLocation(); const { user } = useUser(); const { signOut } = useClerk(); const [menu, setMenu] = useState(false);
+  return <div className="app-shell">
+    <aside className={`sidebar ${menu ? 'sidebar-open' : ''}`}><div className="side-brand"><Logo/><button className="mobile-close" onClick={()=>setMenu(false)} data-testid="button-close-menu"><X size={18}/></button></div>
+      <div className="side-caption mono">MEMBER SPACE</div><nav className="side-nav">{navItems.map(({href,label,icon:Icon})=><Link href={href} key={href} className={`side-link ${active===href?'selected':''}`} data-testid={`link-nav-${label.toLowerCase()}`}><Icon size={18}/>{label}{label==='Loans'&&<span className="nav-arrow">↗</span>}</Link>)}</nav>
+      <div className="sidebar-bottom"><div className="sim-side"><Shield size={16}/><div><b>Simulation mode</b><span>No real funds move</span></div></div><button className="signout" onClick={()=>signOut({redirectUrl:basePath||'/'})} data-testid="button-sign-out"><LogOut size={16}/> Sign out</button></div>
+    </aside>
+    {menu&&<button aria-label="Close navigation" className="mobile-shade" onClick={()=>setMenu(false)} data-testid="button-dismiss-menu"/>}
+    <div className="main-column"><header className="topbar"><button className="mobile-menu" onClick={()=>setMenu(true)} data-testid="button-open-menu"><Menu/></button><div className="crumb">Member portal <span>/</span> {active==='/dashboard'?'Overview':active.slice(1)}</div><div className="top-right"><span className="prototype-pill"><span/> SIMULATED</span><div className="member-chip"><span className="avatar">{(user?.firstName?.[0]||user?.primaryEmailAddress?.emailAddress?.[0]||'M').toUpperCase()}</span><span>{user?.firstName || 'Member'}</span><ChevronDown size={14}/></div></div></header><main className="app-content page-in" key={location}>{children}</main></div>
+  </div>;
 }
-
-function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-          <Router />
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
-  );
+function Protected({ children }: { children: ReactNode }) { return <><Show when="signed-in">{children}</Show><Show when="signed-out"><Redirect to="/sign-in"/></Show></>; }
+function DashboardPage() {
+   const q=useGetFinanceDashboard(), tx=useListTransactions(), [modal,setModal]=useState(false), [tab,setTab]=useState<'deposit'|'withdrawal'|'credit'|'credit_repayment'>('deposit');
+  const create=useCreateTransaction(), qc=useQueryClient(), anomaly=useRunFraudScan();
+  const [anomalyResult,setAnomalyResult]=useState<FraudScanResult|null>(null);
+  const submit=(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const f=new FormData(e.currentTarget);create.mutate({data:{type:tab,amountCents:Math.round(Number(f.get('amount'))*100),description:String(f.get('description')||'Member initiated transaction')}},{onSuccess:()=>{qc.invalidateQueries({queryKey:getGetFinanceDashboardQueryKey()});qc.invalidateQueries({queryKey:getListTransactionsQueryKey()});setModal(false);}});};
+  if(q.isLoading)return <AppShell active="/dashboard"><Loading/></AppShell>;
+  if(q.isError||!q.data)return <AppShell active="/dashboard"><QueryError retry={()=>q.refetch()}/></AppShell>;
+  const d=q.data;
+  return <AppShell active="/dashboard"><div className="page-heading"><div><div className="eyebrow">MEMBER OVERVIEW</div><h1 className="serif">Good to see you, {d.displayName.split(' ')[0]}.</h1><p>Your cooperative account, at a glance.</p></div><Button testId="button-record-transaction" onClick={()=>setModal(true)}><Banknote size={16}/> Record simulated activity</Button></div>
+    <Notice><Shield size={15}/> <span><b>Simulation notice.</b> Balances, credit draws and withdrawals shown here are not real money movement.</span></Notice>
+    <section className="overview-grid"><article className="balance-card"><div className="card-overline"><span>SIMULATED MEMBER BALANCE</span><Wallet size={17}/></div><div className="balance-amount" data-testid="value-member-balance">{money(d.balanceCents)}</div><div className="balance-footer"><span><span className="status-dot"/> {d.isSimulated?'Simulation ledger':'Prototype display only'}</span><span className="mono">ID · {d.memberId.slice(-7).toUpperCase()}</span></div></article>
+      <article className="metric-card"><div className="metric-title">Available credit <HandCoins size={16}/></div><strong data-testid="value-available-credit">{money(d.availableCreditCents)}</strong><div className="meter"><span style={{width:`${d.creditLimitCents?Math.min(100,d.creditUsedCents/d.creditLimitCents*100):0}%`}}/></div><small>{money(d.creditUsedCents)} used of {money(d.creditLimitCents)}</small></article>
+      <article className="metric-card score-card"><div className="metric-title">Cooperative score <BadgeCheck size={16}/></div><strong data-testid="value-cooperative-score">{d.cooperativeScore}<small>/100</small></strong><div className="score-line"><span>Member participation indicator</span><span>Informational measure</span></div></article>
+      <article className="metric-card inflow-card"><div className="metric-title">Monthly inflow <ArrowDownLeft size={16}/></div><strong data-testid="value-monthly-inflow">{money(d.monthlyInflowCents)}</strong><small>Simulated this month</small><span className="inflow-bars"><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/><i/></span></article>
+    </section>
+    <section className="dashboard-lower"><article className="panel activity-panel"><div className="panel-heading"><div><div className="eyebrow">RECENT ACTIVITY</div><h2>Latest transactions</h2></div><Link href="/activity" className="inline-arrow" data-testid="link-all-activity">See all <ArrowRight size={15}/></Link></div>{tx.isLoading?<Loading label="Loading recent transactions"/>:tx.isError?<div className="inline-error">Recent activity could not be loaded. <button onClick={()=>tx.refetch()} data-testid="button-retry-dashboard-activity">Retry</button></div>:<TransactionList items={(tx.data||[]).slice(0,5)}/>}</article>
+      <article className="panel member-note"><div className="note-icon"><Users size={18}/></div><div className="eyebrow">COOPERATIVE MEMBER</div><h2>Better together.</h2><p>Your participation helps build shared understanding of how community finance can work.</p><div className="member-details"><span>Member role</span><b data-testid="value-member-role">{d.role}</b></div><div className="member-details"><span>Account view</span><b className="green-text"><span className="status-dot"/> Simulation</b></div></article>
+    </section>
+    <section className="panel member-scan"><div><div className="eyebrow">TRANSPARENT ANOMALY SCREEN</div><h2>Review activity patterns</h2><p>Rules-based screening can surface activity for human review. It is not an AI model, does not determine fraud, and does not block anyone.</p>{anomalyResult&&<div className="member-scan-result" role="status">Last scan: {anomalyResult.scannedTransactions} transactions reviewed · {anomalyResult.findings.length} findings · {date(anomalyResult.createdAt)}. Findings are only prompts for review.</div>}{anomaly.isError&&<p className="form-error">This scan could not be completed. Try again.</p>}</div><Button kind="outline" testId="button-member-anomaly-scan" disabled={anomaly.isPending} onClick={()=>anomaly.mutate(undefined,{onSuccess:setAnomalyResult})}>{anomaly.isPending?<><RefreshCw size={15}/> Scanning…</>:<><ShieldAlert size={15}/> Run screen</>}</Button></section>
+     {modal&&<Modal title="Record simulated activity" close={()=>setModal(false)}><p className="form-intro">This updates the prototype ledger only. It does not transfer money.</p><div className="segmented">{(['deposit','withdrawal','credit','credit_repayment'] as const).map(v=><button key={v} className={tab===v?'active':''} onClick={()=>setTab(v)} data-testid={`button-type-${v}`}>{titleCase(v)}</button>)}</div>{tab==='credit_repayment'&&<p className="form-intro">A repayment reduces your simulated available balance and outstanding credit by the same amount.</p>}{tab==='credit'&&<p className="form-intro">A simulated credit draw adds to your balance and your outstanding credit.</p>}<form onSubmit={submit} className="form-stack"><Field label="Amount in dollars"><input required type="number" name="amount" min="1" step=".01" max="50000" placeholder="0.00" data-testid="input-transaction-amount"/></Field><Field label="What is this for?"><input maxLength={120} name="description" placeholder="Add a short note" data-testid="input-transaction-description"/></Field>{create.isError&&<p className="form-error" role="alert">We couldn’t record this activity. Please check the details and try again.</p>}<Button type="submit" testId="button-submit-transaction" disabled={create.isPending}>{create.isPending?'Recording…':'Record simulated activity'}</Button></form></Modal>}
+  </AppShell>;
 }
+function TransactionList({items, onReceipt}: {items: Transaction[];onReceipt?:(id:string)=>void}) {
+  if(!items.length)return <div className="empty-inline"><Activity size={20}/><span>No activity yet. Simulated transactions will appear here.</span></div>;
+  const incoming = (type: Transaction['type']) => ['deposit','credit','loan_disbursement'].includes(type);
+  return <div className="tx-list">{items.map(t=><div key={t.id} className="tx-row" data-testid={`row-transaction-${t.id}`}><span className={`tx-icon ${incoming(t.type)?'positive':''}`}>{incoming(t.type)?<ArrowDownLeft size={17}/>:<ArrowUpRight size={17}/>}</span><div className="tx-name"><b>{t.description||titleCase(t.type)}</b><small>{titleCase(t.type)} · {date(t.createdAt)}</small></div><div className="tx-amount"><b>{incoming(t.type)?'+':'−'}{money(t.amountCents)}</b><small className={t.status==='flagged'?'flagged':''}>{t.status}</small></div>{onReceipt&&<button className="icon-button receipt-open" onClick={()=>onReceipt(t.id)} data-testid={`button-receipt-${t.id}`} aria-label={`Open receipt for ${t.description}`}><FileText size={16}/></button>}</div>)}</div>;
+}
+function ActivityPage() {
+ const tx=useListTransactions(),[selected,setSelected]=useState(''),receipt=useGetTransaction(selected,{query:{enabled:!!selected,queryKey:getGetTransactionQueryKey(selected)}}),[filter,setFilter]=useState('all');
+ const rows=(tx.data||[]).filter(t=>filter==='all'||t.type===filter);
+ const download=()=>{if(!receipt.data)return;const t=receipt.data;const content=`EQUITRUST FINANCE — SIMULATED RECEIPT\nReference: ${t.reference}\nDate: ${date(t.createdAt)}\nType: ${titleCase(t.type)}\nDescription: ${t.description}\nAmount: ${money(t.amountCents)}\nBalance after: ${money(t.balanceAfterCents)}\nStatus: ${t.status}\n\nPrototype record only. No real money moved.`;const url=URL.createObjectURL(new Blob([content],{type:'text/plain'}));const a=document.createElement('a');a.href=url;a.download=`equitrust-receipt-${t.reference}.txt`;a.click();URL.revokeObjectURL(url);};
+ return <AppShell active="/activity"><div className="page-heading"><div><div className="eyebrow">YOUR ACCOUNT</div><h1 className="serif">Activity</h1><p>A clear record of simulated account activity.</p></div><div className="export-label"><Shield size={14}/> Receipts are prototype records</div></div><Notice><Shield size={15}/><span>Every item here is simulated. Downloaded receipts are informational only and are not proof of a real transaction.</span></Notice>
+ {tx.isLoading?<Loading/>:tx.isError?<QueryError retry={()=>tx.refetch()}/>:<section className="panel activity-page-panel"><div className="filter-bar"><div><h2>All transactions</h2><span>{rows.length} record{rows.length===1?'':'s'}</span></div><div className="filter-select"><Search size={15}/><select value={filter} onChange={e=>setFilter(e.target.value)} data-testid="select-activity-filter"><option value="all">All activity</option><option value="deposit">Deposits</option><option value="withdrawal">Withdrawals</option><option value="credit">Credit draws</option><option value="credit_repayment">Credit repayments</option><option value="loan_disbursement">Loan disbursements</option></select></div></div><TransactionList items={rows} onReceipt={setSelected}/></section>}
+ {selected&&<Modal title="Transaction receipt" close={()=>setSelected('')}><div className="receipt-brand"><Logo/></div>{receipt.isLoading?<Loading label="Loading receipt"/>:receipt.isError||!receipt.data?<QueryError retry={()=>receipt.refetch()}/>:<><div className="receipt-total"><small>SIMULATED {titleCase(receipt.data.type)}</small><strong>{money(receipt.data.amountCents)}</strong><span><Check size={14}/> {titleCase(receipt.data.status)}</span></div><div className="receipt-details">{[['Reference',receipt.data.reference],['Date',date(receipt.data.createdAt)],['Description',receipt.data.description],['Balance after',money(receipt.data.balanceAfterCents)]].map(([l,v])=><div key={l}><span>{l}</span><b>{v}</b></div>)}</div><Notice>Informational prototype record only. No real money moved.</Notice><Button testId="button-download-receipt" onClick={download}><Download size={16}/> Download receipt</Button></>}</Modal>}
+ </AppShell>;
+}
+function LoansPage() {
+ const loans=useListLoanApplications(),create=useCreateLoanApplication(),qc=useQueryClient();
+ const submit=(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=e.currentTarget;const f=new FormData(form);create.mutate({data:{amountCents:Math.round(Number(f.get('amount'))*100),purpose:String(f.get('purpose')),termMonths:Number(f.get('term')) as 6|12|24|36}},{onSuccess:()=>{qc.invalidateQueries({queryKey:getListLoanApplicationsQueryKey()});form.reset();}});};
+ return <AppShell active="/loans"><div className="page-heading"><div><div className="eyebrow">MEMBER LENDING</div><h1 className="serif">Loans, with clarity.</h1><p>Apply for a simulated community loan and follow its status.</p></div></div><Notice><Shield size={15}/><span><b>Simulation only.</b> Applications and decisions here do not result in real funds being disbursed.</span></Notice>
+ <div className="loan-layout"><section className="panel loan-form-panel"><div className="eyebrow">START AN APPLICATION</div><h2>Tell us what you need.</h2><p className="panel-copy">Applications are reviewed by a cooperative administrator. Submitting is not a promise of approval.</p><form onSubmit={submit} className="form-stack"><Field label="Requested amount"><div className="money-input"><span>$</span><input required type="number" name="amount" min="100" max="25000" step="1" placeholder="1,500" data-testid="input-loan-amount"/></div></Field><Field label="Purpose"><textarea required name="purpose" minLength={3} maxLength={160} rows={3} placeholder="What would this loan help you accomplish?" data-testid="input-loan-purpose"/></Field><Field label="Repayment term"><select name="term" defaultValue="12" data-testid="select-loan-term"><option value="6">6 months</option><option value="12">12 months</option><option value="24">24 months</option><option value="36">36 months</option></select></Field>{create.isError&&<p className="form-error" role="alert">Your application could not be submitted. Please review your details.</p>}{create.isSuccess&&<p className="success-message" role="status"><Check size={15}/> Application submitted for administrator review.</p>}<Button type="submit" testId="button-submit-loan" disabled={create.isPending}>{create.isPending?'Submitting…':'Submit application'}</Button></form></section>
+ <section className="panel loan-history"><div className="panel-heading"><div><div className="eyebrow">YOUR REQUESTS</div><h2>Application history</h2></div><span className="count-badge">{loans.data?.length||0}</span></div>{loans.isLoading?<Loading/>:loans.isError?<QueryError retry={()=>loans.refetch()}/>:!(loans.data||[]).length?<div className="empty-inline"><FileText size={20}/><span>No loan applications yet. Your submissions will appear here.</span></div>:<div className="loan-list">{loans.data!.map(l=><LoanRow key={l.id} loan={l}/>)}</div>}</section></div>
+ </AppShell>;
+}
+function LoanRow({loan}: {loan:LoanApplication}){return <article className="loan-row" data-testid={`row-loan-${loan.id}`}><div className="loan-row-head"><div><b>{money(loan.amountCents)}</b><span>{date(loan.createdAt)}</span></div><span className={`loan-status ${loan.status}`}>{titleCase(loan.status)}</span></div><p>{loan.purpose}</p><small>{loan.termMonths} month term · {loan.id.slice(-8)}</small></article>;}
 
+function AdminPage() {
+ const [section,setSection]=useState<'overview'|'members'|'loans'|'fraud'|'administrators'|'settings'>('overview');
+ const overview=useGetAdminOverview();
+ const title:Record<typeof section,string>={overview:'Operations overview',members:'Members',loans:'Loan review',fraud:'Fraud scan',administrators:'Administrators',settings:'Platform settings'};
+ return <AppShell active="/admin"><div className="page-heading"><div><div className="eyebrow">COOPERATIVE OPERATIONS</div><h1 className="serif">{title[section]}</h1><p>Tools for accountable, administrator-led operations.</p></div></div>
+   <div className="admin-tabs" role="tablist">{(['overview','members','loans','fraud','administrators','settings'] as const).map(s=><button role="tab" aria-selected={section===s} className={section===s?'current':''} onClick={()=>setSection(s)} key={s} data-testid={`tab-admin-${s}`}>{s==='overview'?'Overview':s==='loans'?'Loans':s==='fraud'?'Fraud scan':s==='administrators'?'Administrators':s==='settings'?'Settings':'Members'}</button>)}</div>
+   {section==='overview'&&(overview.isLoading?<Loading/>:overview.isError?<QueryError retry={()=>overview.refetch()}/>:<AdminOverview data={overview.data!} go={setSection}/>)}
+   {section==='members'&&<Members/>}{section==='loans'&&<AdminLoans/>}{section==='fraud'&&<FraudPanel/>}{section==='administrators'&&<Administrators/>}{section==='settings'&&<SettingsPanel/>}
+ </AppShell>;
+}
+function AdminOverview({data,go}:{data:{memberCount:number;activeMembers:number;blockedMembers:number;totalBalanceCents:number;pendingLoans:number;recentTransactions:number};go:(s:'members'|'loans'|'fraud'|'administrators'|'settings')=>void}) {
+ return <><Notice><Shield size={15}/><span>Operations are simulated. Fraud findings are review prompts—not determinations—and only an administrator can change member access.</span></Notice><section className="admin-stats">
+ {[['Members',data.memberCount,<Users size={17}/>],['Active members',data.activeMembers,<BadgeCheck size={17}/>],['Blocked members',data.blockedMembers,<ShieldAlert size={17}/>],['Pending loans',data.pendingLoans,<HandCoins size={17}/>],['Simulated balances',money(data.totalBalanceCents),<Wallet size={17}/>],['Recent activity',data.recentTransactions,<Activity size={17}/>]].map(([label,value,icon])=><article className="admin-stat" key={String(label)}><span>{label as string}{icon as ReactNode}</span><b data-testid={`admin-value-${String(label).toLowerCase().replaceAll(' ','-')}`}>{value as ReactNode}</b></article>)}
+ </section><div className="admin-shortcuts"><button onClick={()=>go('members')} data-testid="button-shortcut-members"><Users/> Manage member access <ArrowRight/></button><button onClick={()=>go('loans')} data-testid="button-shortcut-loans"><HandCoins/> Review loan applications <ArrowRight/></button><button onClick={()=>go('fraud')} data-testid="button-shortcut-fraud"><ShieldAlert/> Run anomaly screen <ArrowRight/></button></div></>;
+}
+function Members(){
+ const q=useListMembers(),update=useUpdateMemberStatus(),qc=useQueryClient(),[search,setSearch]=useState('');
+ const act=(m:AdminMember)=>{const next=m.status==='active'?'blocked':'active';if(next==='blocked'&&!window.confirm(`Block access for ${m.displayName}?`))return;update.mutate({memberId:m.id,data:{status:next}},{onSuccess:()=>{qc.invalidateQueries({queryKey:getListMembersQueryKey()});qc.invalidateQueries({queryKey:getGetAdminOverviewQueryKey()});}});};
+ const members=(q.data||[]).filter(m=>`${m.displayName} ${m.email}`.toLowerCase().includes(search.toLowerCase()));
+  return <section className="panel admin-panel"><div className="table-heading"><div><div className="eyebrow">MEMBER DIRECTORY</div><h2>Member access</h2></div><div className="search-box"><Search size={15}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search members" data-testid="input-search-members"/></div></div>{q.isLoading?<Loading/>:q.isError?<QueryError retry={()=>q.refetch()}/>:!members.length?<div className="empty-inline"><Users size={19}/><span>No members match this search.</span></div>:<div className="responsive-table"><table><thead><tr><th>Member</th><th>Role</th><th>Simulated balance</th><th>Status</th><th>Joined</th><th/></tr></thead><tbody>{members.map(m=><tr key={m.id} data-testid={`row-member-${m.id}`}><td><b>{m.displayName}</b><small>{m.email}</small></td><td><span className="role-tag">{m.role}</span></td><td>{money(m.balanceCents)}</td><td><span className={`status-tag ${m.status}`}>{m.status}</span></td><td>{date(m.createdAt)}</td><td><button className={`table-action ${m.status==='blocked'?'restore':''}`} disabled={update.isPending||m.role!=='member'} onClick={()=>act(m)} data-testid={`button-member-status-${m.id}`}>{m.status==='active'?'Block':'Restore'}</button></td></tr>)}</tbody></table></div>}</section>;
+}
+function AdminLoans(){
+ const q=useListAdminLoanApplications(),decide=useDecideLoanApplication(),qc=useQueryClient();
+  const action=(id:string,status:'approved'|'declined')=>{if(!window.confirm(`${status==='approved'?'Approve':'Decline'} this simulated application?`))return;decide.mutate({loanId:id,data:{status}},{onSuccess:()=>{qc.invalidateQueries({queryKey:getListAdminLoanApplicationsQueryKey()});qc.invalidateQueries({queryKey:getGetAdminOverviewQueryKey()});}});};
+ return <section className="panel admin-panel"><div className="table-heading"><div><div className="eyebrow">MEMBER REQUESTS</div><h2>Applications for review</h2></div></div>{q.isLoading?<Loading/>:q.isError?<QueryError retry={()=>q.refetch()}/>:!q.data?.length?<div className="empty-inline"><HandCoins size={19}/><span>No loan applications to review right now.</span></div>:<div className="responsive-table"><table><thead><tr><th>Member</th><th>Request</th><th>Purpose</th><th>Term</th><th>Status</th><th>Submitted</th><th>Decision</th></tr></thead><tbody>{q.data.map(l=><tr key={l.id} data-testid={`row-admin-loan-${l.id}`}><td><b>{l.displayName}</b><small>{l.email}</small></td><td>{money(l.amountCents)}</td><td className="purpose-cell">{l.purpose}</td><td>{l.termMonths} mo.</td><td><span className={`loan-status ${l.status}`}>{l.status}</span></td><td>{date(l.createdAt)}</td><td>{l.status==='pending'?<div className="decision-actions"><button className="approve-button" disabled={decide.isPending} onClick={()=>action(l.id,'approved')} data-testid={`button-approve-loan-${l.id}`}>Approve</button><button className="decline-button" disabled={decide.isPending} onClick={()=>action(l.id,'declined')} data-testid={`button-decline-loan-${l.id}`}>Decline</button></div>:<span className="muted-copy">Decided</span>}</td></tr>)}</tbody></table></div>}</section>;
+}
+function FraudPanel(){
+ const scan=useRunAdminFraudScan(),[result,setResult]=useState<Awaited<ReturnType<typeof scan.mutateAsync>>|null>(null);
+ const run=()=>scan.mutate(undefined,{onSuccess:setResult});
+ return <div className="fraud-layout"><section className="panel fraud-intro"><div className="fraud-emblem"><ShieldAlert size={23}/></div><div className="eyebrow">TRANSPARENT REVIEW TOOL</div><h2>Anomaly screen</h2><p>Review recent activity for patterns that may merit a closer look. Findings are not proof of fraud and do not determine member access.</p><div className="rules-label"><span className="status-dot"/> Rules-based detector <span className="not-ai">Not AI</span></div><Button testId="button-run-fraud-scan" onClick={run} disabled={scan.isPending}>{scan.isPending?<><RefreshCw className="spin" size={16}/> Scanning…</>:<><Shield size={16}/> Run transparent scan</>}</Button>{scan.isError&&<p className="form-error">The scan did not complete. Try again.</p>}<p className="small-disclaimer">The OpenAI integration is unavailable. This prototype uses a rules-based anomaly screen and does not automatically determine fraud or block anyone.</p></section>
+ <section className="panel scan-results"><div className="panel-heading"><div><div className="eyebrow">SCAN REPORT</div><h2>{result?'Most recent scan':'Waiting for a scan'}</h2></div>{result&&<span className="report-date">{date(result.createdAt)}</span>}</div>{!result?<div className="empty-inline tall"><CircleHelp size={21}/><span>Run the screen to view the server-reported scan counts and any review findings.</span></div>:<><div className="scan-counts"><div><span>Accounts scanned</span><b data-testid="value-scan-accounts">{result.scannedAccounts}</b></div><div><span>Transactions scanned</span><b data-testid="value-scan-transactions">{result.scannedTransactions}</b></div><div><span>Review findings</span><b data-testid="value-scan-findings">{result.findings.length}</b></div></div><p className="method-copy"><b>Method:</b> {result.method}</p>{result.findings.length===0?<div className="empty-inline"><BadgeCheck size={19}/><span>No review findings were returned in this scan. This is not a guarantee of account safety.</span></div>:<div className="finding-list">{result.findings.map((f,i)=><article key={`${f.memberId}-${i}`} data-testid={`row-finding-${f.memberId}`}><div><b>{f.displayName}</b><small>{f.email}</small></div><span className={`risk ${f.riskLevel}`}>{f.riskLevel} · {f.score}</span><p>{f.reasons.join(' · ')}</p><small>{f.transactionCount} transactions reviewed</small></article>)}</div>}<Notice>{result.disclaimer}</Notice></>}</section></div>;
+}
+function Administrators(){
+ const q=useListAdministrators(),grant=useGrantAdministrator(),qc=useQueryClient();
+ const submit=(e:FormEvent<HTMLFormElement>)=>{e.preventDefault();const form=e.currentTarget;const email=String(new FormData(form).get('email'));grant.mutate({data:{email}},{onSuccess:()=>{qc.invalidateQueries({queryKey:getListAdministratorsQueryKey()});form.reset();}});};
+ return <div className="admin-two-col"><section className="panel admin-panel"><div className="eyebrow">ACCESS LIST</div><h2>Administrators</h2>{q.isLoading?<Loading/>:q.isError?<QueryError retry={()=>q.refetch()}/>:!q.data?.length?<div className="empty-inline"><Users size={18}/><span>No administrator access is listed.</span></div>:<div className="administrator-list">{q.data.map((a,i)=><article key={a.email} data-testid={`row-administrator-${i}`}><span className="admin-avatar">{a.email.slice(0,1).toUpperCase()}</span><div><b>{a.email}</b><small>{a.role} · {a.status}</small></div><span className={`status-tag ${a.status==='active'?'active':'pending'}`}>{a.status}</span></article>)}</div>}</section><section className="panel grant-panel"><div className="grant-icon"><UserRoundPlus/></div><div className="eyebrow">GRANT ACCESS</div><h2>Invite an administrator</h2><p>Grant operations access to an existing member by email. The server controls administrator authorization.</p><form className="form-stack" onSubmit={submit}><Field label="Administrator email"><input required type="email" name="email" placeholder="name@community.org" data-testid="input-admin-email"/></Field>{grant.isError&&<p className="form-error">Could not grant access. Check the email or your permissions.</p>}{grant.isSuccess&&<p className="success-message"><Check size={15}/> Access grant submitted.</p>}<Button type="submit" testId="button-grant-administrator" disabled={grant.isPending}>{grant.isPending?'Submitting…':'Grant administrator access'}</Button></form><Notice>Administrator grants are recorded by the server. No access is created until the request succeeds.</Notice></section></div>;
+}
+function SettingsPanel(){
+ const q=useGetPlatformSettings(),mut=useUpdatePlatformSettings(),qc=useQueryClient(),initialized=useRef(false);
+ const [form,setForm]=useState<PlatformSettings>({siteName:'Equitrust Finance',tagline:'',announcement:'',supportEmail:'',updatedAt:''});
+ useEffect(()=>{if(q.data&&!initialized.current){setForm(q.data);initialized.current=true;}},[q.data]);
+ const change=(key:keyof PlatformSettings,value:string)=>setForm(current=>({...current,[key]:value}));
+ const submit=(e:FormEvent)=>{e.preventDefault();mut.mutate({data:{siteName:form.siteName,tagline:form.tagline,announcement:form.announcement,supportEmail:form.supportEmail}},{onSuccess:()=>qc.invalidateQueries({queryKey:getGetPlatformSettingsQueryKey()})});};
+ return <section className="panel settings-panel"><div className="eyebrow">PUBLIC PLATFORM DETAILS</div><h2>Platform settings</h2><p className="panel-copy">Update the public-facing name, message and support contact.</p>{q.isLoading?<Loading/>:q.isError?<QueryError retry={()=>q.refetch()}/>:<form className="settings-form" onSubmit={submit}><Field label="Platform name"><input required minLength={2} maxLength={60} value={form.siteName} onChange={e=>change('siteName',e.target.value)} data-testid="input-setting-site-name"/></Field><Field label="Tagline"><input required minLength={3} maxLength={180} value={form.tagline} onChange={e=>change('tagline',e.target.value)} data-testid="input-setting-tagline"/></Field><Field label="Announcement"><textarea maxLength={240} rows={3} value={form.announcement} onChange={e=>change('announcement',e.target.value)} data-testid="input-setting-announcement"/></Field><Field label="Support email"><input type="email" maxLength={254} value={form.supportEmail} onChange={e=>change('supportEmail',e.target.value)} data-testid="input-setting-support-email"/></Field>{mut.isError&&<p className="form-error">Settings could not be saved. Please retry.</p>}{mut.isSuccess&&<p className="success-message"><Check size={15}/> Platform settings saved.</p>}<div className="settings-actions"><span className="muted-copy">{form.updatedAt?`Last updated ${date(form.updatedAt)}`:'Changes update the public platform display.'}</span><Button type="submit" testId="button-save-settings" disabled={mut.isPending}>{mut.isPending?'Saving…':'Save changes'}</Button></div></form>}</section>;
+}
+function Modal({title,close,children}:{title:string;close:()=>void;children:ReactNode}){
+ useEffect(()=>{const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')close();};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[close]);
+ return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close();}}><section className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button onClick={close} className="icon-button" data-testid="button-close-modal" aria-label="Close"><X size={19}/></button></div>{children}</section></div>;
+}
+function ClerkQueryClientCacheInvalidator(){const {addListener}=useClerk();const qc=useQueryClient();const prev=useRef<string|null|undefined>(undefined);useEffect(()=>{const unsub=addListener(({user})=>{const id=user?.id??null;if(prev.current!==undefined&&prev.current!==id)qc.clear();prev.current=id;});return unsub;},[addListener,qc]);return null;}
+function RoutedErrorBoundary({children}:{children:ReactNode}){const [location]=useLocation();return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;}
+function ClerkRoutes(){
+ const [,setLocation]=useLocation();
+ return <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={appearance} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} localization={{signIn:{start:{title:'Welcome back',subtitle:'Sign in to your Equitrust member account'}},signUp:{start:{title:'Join Equitrust Finance',subtitle:'Create your cooperative member account'}}}} routerPush={to=>setLocation(stripBase(to))} routerReplace={to=>setLocation(stripBase(to),{replace:true})}>
+   <QueryClientProvider client={queryClient}><TooltipProvider><ClerkQueryClientCacheInvalidator/><RoutedErrorBoundary><Switch>
+    <Route path="/" component={HomeRedirect}/><Route path="/sign-in/*?" component={SignInPage}/><Route path="/sign-up/*?" component={SignUpPage}/>
+    <Route path="/dashboard">{()=><Protected><DashboardPage/></Protected>}</Route><Route path="/activity">{()=><Protected><ActivityPage/></Protected>}</Route><Route path="/loans">{()=><Protected><LoansPage/></Protected>}</Route><Route path="/admin">{()=><Protected><AdminPage/></Protected>}</Route><Route component={NotFound}/>
+   </Switch></RoutedErrorBoundary><Toaster/></TooltipProvider></QueryClientProvider>
+ </ClerkProvider>;
+}
+function App(){return <WouterRouter base={basePath}><ClerkRoutes/></WouterRouter>;}
 export default App;

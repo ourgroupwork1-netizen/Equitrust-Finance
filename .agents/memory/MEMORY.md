@@ -1,0 +1,1 @@
+- [Equitrust fraud screening](equitrust-fraud-screening.md) — AI provider access is gated; keep current anomaly checks clearly labeled as non-AI and non-determinative.

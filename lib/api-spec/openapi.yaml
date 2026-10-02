@@ -1,15 +1,20 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Equitrust Finance cooperative banking simulation API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: finance
+    description: Member account, transactions, credit, loans, and risk review
+  - name: platform
+    description: Public platform settings
+  - name: admin
+    description: Administrator operations
 paths:
   /healthz:
     get:
@@ -24,7 +29,364 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /finance/dashboard:
+    get:
+      operationId: getFinanceDashboard
+      tags: [finance]
+      summary: Get the signed-in member's account overview
+      responses:
+        "200":
+          description: Account overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinanceDashboard"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /finance/transactions:
+    get:
+      operationId: listTransactions
+      tags: [finance]
+      summary: List the signed-in member's transactions
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Transaction"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createTransaction
+      tags: [finance]
+      summary: Record a simulated deposit, withdrawal, or credit draw
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransactionInput"
+      responses:
+        "201":
+          description: Transaction recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /finance/transactions/{transactionId}:
+    get:
+      operationId: getTransaction
+      tags: [finance]
+      summary: Get a transaction receipt
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Transaction receipt details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /finance/loans:
+    get:
+      operationId: listLoanApplications
+      tags: [finance]
+      summary: List the signed-in member's loan applications
+      responses:
+        "200":
+          description: Loan applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoanApplication"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createLoanApplication
+      tags: [finance]
+      summary: Submit a loan application for administrator review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanApplicationInput"
+      responses:
+        "201":
+          description: Loan application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanApplication"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /finance/fraud-scan:
+    post:
+      operationId: runFraudScan
+      tags: [finance]
+      summary: Run a transparent automated anomaly scan on recent transactions
+      responses:
+        "200":
+          description: Risk review results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudScanResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /platform-settings:
+    get:
+      operationId: getPlatformSettings
+      tags: [platform]
+      summary: Get public platform branding and announcement settings
+      responses:
+        "200":
+          description: Public settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSettings"
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [admin]
+      summary: Get platform-wide administrative metrics
+      responses:
+        "200":
+          description: Administrative overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverview"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/members:
+    get:
+      operationId: listMembers
+      tags: [admin]
+      summary: List member accounts for administration
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminMember"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/members/{memberId}:
+    patch:
+      operationId: updateMemberStatus
+      tags: [admin]
+      summary: Block or restore a member account
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberStatusUpdate"
+      responses:
+        "200":
+          description: Member status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminMember"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/loans:
+    get:
+      operationId: listAdminLoanApplications
+      tags: [admin]
+      summary: List loan applications for review
+      responses:
+        "200":
+          description: Loan applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminLoanApplication"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/loans/{loanId}:
+    patch:
+      operationId: decideLoanApplication
+      tags: [admin]
+      summary: Approve or decline a loan application
+      parameters:
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanDecisionInput"
+      responses:
+        "200":
+          description: Loan application reviewed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLoanApplication"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/fraud-scan:
+    post:
+      operationId: runAdminFraudScan
+      tags: [admin]
+      summary: Scan recent platform transactions for risk indicators
+      responses:
+        "200":
+          description: Platform risk review results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FraudScanResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/admins:
+    get:
+      operationId: listAdministrators
+      tags: [admin]
+      summary: List administrators and pending email grants
+      responses:
+        "200":
+          description: Administrator grants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Administrator"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      operationId: grantAdministrator
+      tags: [admin]
+      summary: Grant administrator access to a verified email address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminGrantInput"
+      responses:
+        "201":
+          description: Administrator grant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Administrator"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /admin/platform-settings:
+    patch:
+      operationId: updatePlatformSettings
+      tags: [admin]
+      summary: Update public platform branding and announcement settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlatformSettingsUpdate"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 components:
+  responses:
+    BadRequest:
+      description: The request is invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Authentication is required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: The operation is not permitted
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: The requested record was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +395,177 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    FinanceDashboard:
+      type: object
+      properties:
+        memberId: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [member, admin, owner] }
+        balanceCents: { type: integer }
+        creditLimitCents: { type: integer }
+        creditUsedCents: { type: integer }
+        availableCreditCents: { type: integer }
+        cooperativeScore: { type: integer, minimum: 0, maximum: 100 }
+        monthlyInflowCents: { type: integer }
+        isSimulated: { type: boolean }
+      required:
+        - memberId
+        - displayName
+        - email
+        - role
+        - balanceCents
+        - creditLimitCents
+        - creditUsedCents
+        - availableCreditCents
+        - cooperativeScore
+        - monthlyInflowCents
+        - isSimulated
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type:
+          { type: string, enum: [deposit, withdrawal, credit, credit_repayment, loan_disbursement] }
+        amountCents: { type: integer, minimum: 1 }
+        balanceAfterCents: { type: integer }
+        description: { type: string }
+        status: { type: string, enum: [posted, flagged] }
+        reference: { type: string }
+        createdAt: { type: string, format: date-time }
+      required:
+        - id
+        - type
+        - amountCents
+        - balanceAfterCents
+        - description
+        - status
+        - reference
+        - createdAt
+    TransactionInput:
+      type: object
+      properties:
+        type: { type: string, enum: [deposit, withdrawal, credit, credit_repayment] }
+        amountCents: { type: integer, minimum: 100, maximum: 5000000 }
+        description: { type: string, maxLength: 120 }
+      required: [type, amountCents, description]
+    LoanApplication:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        amountCents: { type: integer, minimum: 1 }
+        purpose: { type: string }
+        termMonths: { type: integer }
+        status: { type: string, enum: [pending, approved, declined] }
+        createdAt: { type: string, format: date-time }
+      required: [id, amountCents, purpose, termMonths, status, createdAt]
+    LoanApplicationInput:
+      type: object
+      properties:
+        amountCents: { type: integer, minimum: 10000, maximum: 2500000 }
+        purpose: { type: string, minLength: 3, maxLength: 160 }
+        termMonths: { type: integer, enum: [6, 12, 24, 36] }
+      required: [amountCents, purpose, termMonths]
+    FraudScanResult:
+      type: object
+      properties:
+        scannedAccounts: { type: integer }
+        scannedTransactions: { type: integer }
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiskFinding"
+        method: { type: string }
+        disclaimer: { type: string }
+        createdAt: { type: string, format: date-time }
+      required: [scannedAccounts, scannedTransactions, findings, method, disclaimer, createdAt]
+    RiskFinding:
+      type: object
+      properties:
+        memberId: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        riskLevel: { type: string, enum: [low, review, high] }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        reasons:
+          type: array
+          items: { type: string }
+        transactionCount: { type: integer }
+      required: [memberId, displayName, email, riskLevel, score, reasons, transactionCount]
+    PlatformSettings:
+      type: object
+      properties:
+        siteName: { type: string }
+        tagline: { type: string }
+        announcement: { type: string }
+        supportEmail: { type: string, format: email }
+        updatedAt: { type: string, format: date-time }
+      required: [siteName, tagline, announcement, supportEmail, updatedAt]
+    PlatformSettingsUpdate:
+      type: object
+      properties:
+        siteName: { type: string, minLength: 2, maxLength: 60 }
+        tagline: { type: string, minLength: 3, maxLength: 180 }
+        announcement: { type: string, maxLength: 240 }
+        supportEmail: { type: string, format: email, maxLength: 254 }
+      required: [siteName, tagline, announcement, supportEmail]
+    AdminOverview:
+      type: object
+      properties:
+        memberCount: { type: integer }
+        activeMembers: { type: integer }
+        blockedMembers: { type: integer }
+        totalBalanceCents: { type: integer }
+        pendingLoans: { type: integer }
+        recentTransactions: { type: integer }
+      required: [memberCount, activeMembers, blockedMembers, totalBalanceCents, pendingLoans, recentTransactions]
+    AdminMember:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [member, admin, owner] }
+        status: { type: string, enum: [active, blocked] }
+        balanceCents: { type: integer }
+        createdAt: { type: string, format: date-time }
+      required: [id, displayName, email, role, status, balanceCents, createdAt]
+    MemberStatusUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [active, blocked] }
+      required: [status]
+    AdminLoanApplication:
+      allOf:
+        - $ref: "#/components/schemas/LoanApplication"
+        - type: object
+          properties:
+            memberId: { type: string, format: uuid }
+            displayName: { type: string }
+            email: { type: string, format: email }
+          required: [memberId, displayName, email]
+    LoanDecisionInput:
+      type: object
+      properties:
+        status: { type: string, enum: [approved, declined] }
+      required: [status]
+    Administrator:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        status: { type: string, enum: [active, invited] }
+        role: { type: string, enum: [admin, owner] }
+        createdAt: { type: string, format: date-time }
+      required: [email, status, role, createdAt]
+    AdminGrantInput:
+      type: object
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+      required: [email]
 
