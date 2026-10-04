@@ -103,9 +103,11 @@ function SignUpPage() { return <div className="auth-page"><div className="auth-s
 const navItems = [{ href:'/dashboard', label:'Overview', icon:LayoutDashboard },{ href:'/activity', label:'Activity', icon:Activity },{ href:'/loans', label:'Loans', icon:HandCoins },{ href:'/admin', label:'Operations', icon:Shield }];
 function AppShell({ children, active }: { children: ReactNode; active: string }) {
   const [location] = useLocation(); const { user } = useUser(); const { signOut } = useClerk(); const [menu, setMenu] = useState(false);
+  const member = useGetFinanceDashboard();
+  const canManageOperations = !member.isFetching && (member.data?.role === 'admin' || member.data?.role === 'owner');
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'sidebar-open' : ''}`}><div className="side-brand"><Logo/><button className="mobile-close" onClick={()=>setMenu(false)} data-testid="button-close-menu"><X size={18}/></button></div>
-      <div className="side-caption mono">MEMBER SPACE</div><nav className="side-nav">{navItems.map(({href,label,icon:Icon})=><Link href={href} key={href} className={`side-link ${active===href?'selected':''}`} data-testid={`link-nav-${label.toLowerCase()}`}><Icon size={18}/>{label}{label==='Loans'&&<span className="nav-arrow">↗</span>}</Link>)}</nav>
+      <div className="side-caption mono">MEMBER SPACE</div><nav className="side-nav">{navItems.filter(({href})=>href!=='/admin'||canManageOperations).map(({href,label,icon:Icon})=><Link href={href} key={href} className={`side-link ${active===href?'selected':''}`} data-testid={`link-nav-${label.toLowerCase()}`}><Icon size={18}/>{label}{label==='Loans'&&<span className="nav-arrow">↗</span>}</Link>)}</nav>
       <div className="sidebar-bottom"><div className="sim-side"><Shield size={16}/><div><b>Simulation mode</b><span>No real funds move</span></div></div><button className="signout" onClick={()=>signOut({redirectUrl:basePath||'/'})} data-testid="button-sign-out"><LogOut size={16}/> Sign out</button></div>
     </aside>
     {menu&&<button aria-label="Close navigation" className="mobile-shade" onClick={()=>setMenu(false)} data-testid="button-dismiss-menu"/>}
@@ -113,6 +115,13 @@ function AppShell({ children, active }: { children: ReactNode; active: string })
   </div>;
 }
 function Protected({ children }: { children: ReactNode }) { return <><Show when="signed-in">{children}</Show><Show when="signed-out"><Redirect to="/sign-in"/></Show></>; }
+function AdminAccessGate() {
+ const member=useGetFinanceDashboard();
+ if(member.isLoading||member.isFetching)return <AppShell active="/admin"><Loading label="Checking administrator access"/></AppShell>;
+ if(member.isError||!member.data)return <AppShell active="/admin"><QueryError retry={()=>member.refetch()}/></AppShell>;
+ if(member.data.role!=='admin'&&member.data.role!=='owner')return <Redirect to="/dashboard"/>;
+ return <AdminPage/>;
+}
 function DashboardPage() {
    const q=useGetFinanceDashboard(), tx=useListTransactions(), [modal,setModal]=useState(false), [tab,setTab]=useState<'deposit'|'withdrawal'|'credit'|'credit_repayment'>('deposit');
   const create=useCreateTransaction(), qc=useQueryClient(), anomaly=useRunFraudScan();
@@ -215,7 +224,7 @@ function ClerkRoutes(){
  return <ClerkProvider publishableKey={clerkPubKey} proxyUrl={clerkProxyUrl} appearance={appearance} signInUrl={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} localization={{signIn:{start:{title:'Welcome back',subtitle:'Sign in to your Equitrust member account'}},signUp:{start:{title:'Join Equitrust Finance',subtitle:'Create your cooperative member account'}}}} routerPush={to=>setLocation(stripBase(to))} routerReplace={to=>setLocation(stripBase(to),{replace:true})}>
    <QueryClientProvider client={queryClient}><TooltipProvider><ClerkQueryClientCacheInvalidator/><RoutedErrorBoundary><Switch>
     <Route path="/" component={HomeRedirect}/><Route path="/sign-in/*?" component={SignInPage}/><Route path="/sign-up/*?" component={SignUpPage}/>
-    <Route path="/dashboard">{()=><Protected><DashboardPage/></Protected>}</Route><Route path="/activity">{()=><Protected><ActivityPage/></Protected>}</Route><Route path="/loans">{()=><Protected><LoansPage/></Protected>}</Route><Route path="/admin">{()=><Protected><AdminPage/></Protected>}</Route><Route component={NotFound}/>
+    <Route path="/dashboard">{()=><Protected><DashboardPage/></Protected>}</Route><Route path="/activity">{()=><Protected><ActivityPage/></Protected>}</Route><Route path="/loans">{()=><Protected><LoansPage/></Protected>}</Route><Route path="/admin">{()=><Protected><AdminAccessGate/></Protected>}</Route><Route component={NotFound}/>
    </Switch></RoutedErrorBoundary><Toaster/></TooltipProvider></QueryClientProvider>
  </ClerkProvider>;
 }
