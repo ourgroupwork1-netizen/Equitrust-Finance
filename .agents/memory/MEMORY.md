@@ -1,1 +1,1 @@
-- [Equitrust fraud screening](equitrust-fraud-screening.md) — AI provider access is gated; keep current anomaly checks clearly labeled as non-AI and non-determinative.
+- [Equitrust fraud screening](equitrust-fraud-screening.md) — AI review is admin-triggered; send only anonymized transaction fields and keep findings advisory.

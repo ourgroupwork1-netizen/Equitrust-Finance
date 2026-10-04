@@ -35,6 +35,7 @@ import type {
   LoanDecisionInput,
   MemberStatusUpdate,
   NotFoundResponse,
+  OpenAIUnavailableResponse,
   PlatformSettings,
   PlatformSettingsUpdate,
   Transaction,
@@ -640,7 +641,7 @@ export const getRunFraudScanUrl = () => {
 }
 
 /**
- * @summary Run a transparent automated anomaly scan on recent transactions
+ * @summary Run a transparent rules-based anomaly scan on the signed-in member's recent transactions
  */
 export const runFraudScan = async ( options?: Parameters<typeof customFetch>[1]): Promise<FraudScanResult> => {
 
@@ -692,7 +693,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
     /**
- * @summary Run a transparent automated anomaly scan on recent transactions
+ * @summary Run a transparent rules-based anomaly scan on the signed-in member's recent transactions
  */
 export const useRunFraudScan = <TError = ErrorType<UnauthorizedResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runFraudScan>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -1200,7 +1201,7 @@ export const getRunAdminFraudScanUrl = () => {
 }
 
 /**
- * @summary Scan recent platform transactions for risk indicators
+ * @summary Run an OpenAI-assisted review of anonymized recent platform transaction patterns
  */
 export const runAdminFraudScan = async ( options?: Parameters<typeof customFetch>[1]): Promise<FraudScanResult> => {
 
@@ -1219,7 +1220,7 @@ export const runAdminFraudScan = async ( options?: Parameters<typeof customFetch
 
 export const getRunAdminFraudScanMutationKey = () => ['runAdminFraudScan'] as const;
 
-export const getRunAdminFraudScanMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+export const getRunAdminFraudScanMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | OpenAIUnavailableResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAdminFraudScan>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof runAdminFraudScan>>, TError,void, TContext> => {
 
@@ -1248,13 +1249,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RunAdminFraudScanMutationResult = NonNullable<Awaited<ReturnType<typeof runAdminFraudScan>>>
 
-    export type RunAdminFraudScanMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+    export type RunAdminFraudScanMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | OpenAIUnavailableResponse>
 
 
     /**
- * @summary Scan recent platform transactions for risk indicators
+ * @summary Run an OpenAI-assisted review of anonymized recent platform transaction patterns
  */
-export const useRunAdminFraudScan = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+export const useRunAdminFraudScan = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | OpenAIUnavailableResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runAdminFraudScan>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof runAdminFraudScan>>,

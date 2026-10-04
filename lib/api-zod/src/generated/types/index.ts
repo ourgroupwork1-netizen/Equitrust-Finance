@@ -31,6 +31,7 @@ export * from './loanDecisionInputStatus';
 export * from './memberStatusUpdate';
 export * from './memberStatusUpdateStatus';
 export * from './notFoundResponse';
+export * from './openAIUnavailableResponse';
 export * from './platformSettings';
 export * from './platformSettingsUpdate';
 export * from './riskFinding';

@@ -12,6 +12,7 @@ import {
   MAX_AI_ACCOUNTS_PER_SCAN,
   OPENAI_FRAUD_MODEL,
   type AnonymizedAccountSignal,
+  type AiRiskFinding,
 } from "./openaiFraudAnalysis";
 
 const DISCLAIMER =
@@ -67,6 +68,10 @@ export async function runFraudDetection({
     if (current.length < 50) current.push(transaction);
     byAccount.set(transaction.accountId, current);
   }
+  const analyzedTransactionCount = [...byAccount.values()].reduce(
+    (total, transactions) => total + transactions.length,
+    0,
+  );
 
   const findings = accountRows
     .map((account) => {
@@ -173,7 +178,7 @@ export async function runFraudDetection({
     }),
   );
 
-  let aiFindings;
+  let aiFindings: AiRiskFinding[] = [];
   try {
     aiFindings = useAi
       ? await analyzeTransactionSignals(aiAccounts)
@@ -231,7 +236,7 @@ export async function runFraudDetection({
 
   const result = {
     scannedAccounts: accountRows.length,
-    scannedTransactions: transactionRows.length,
+    scannedTransactions: analyzedTransactionCount,
     findings,
     method,
     disclaimer,

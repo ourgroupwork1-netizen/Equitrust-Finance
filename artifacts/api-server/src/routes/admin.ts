@@ -35,9 +35,9 @@ import {
   transactionsTable,
 } from "@workspace/db";
 import {
-  FraudAnalysisUnavailableError,
   runFraudDetection,
 } from "../lib/fraudDetection";
+import { FraudAnalysisUnavailableError } from "../lib/openaiFraudAnalysis";
 import {
   memberIdFromRequest,
   requireAdmin,

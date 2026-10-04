@@ -160,7 +160,7 @@ export const CreateLoanApplicationResponse = zod.object({
 
 
 /**
- * @summary Run a transparent automated anomaly scan on recent transactions
+ * @summary Run a transparent rules-based anomaly scan on the signed-in member's recent transactions
  */
 export const runFraudScanResponseFindingsItemScoreMin = 0;
 export const runFraudScanResponseFindingsItemScoreMax = 100;
@@ -297,7 +297,7 @@ export const DecideLoanApplicationResponse = zod.object({
 
 
 /**
- * @summary Scan recent platform transactions for risk indicators
+ * @summary Run an OpenAI-assisted review of anonymized recent platform transaction patterns
  */
 export const runAdminFraudScanResponseFindingsItemScoreMin = 0;
 export const runAdminFraudScanResponseFindingsItemScoreMax = 100;

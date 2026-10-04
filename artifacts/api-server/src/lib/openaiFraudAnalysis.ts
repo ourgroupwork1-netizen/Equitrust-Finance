@@ -148,7 +148,7 @@ export async function analyzeTransactionSignals(
       item.reasons.length < 1 ||
       item.reasons.length > 3 ||
       item.reasons.some(
-        (reason) =>
+        (reason: unknown) =>
           typeof reason !== "string" ||
           reason.trim().length === 0 ||
           reason.length > 200,
@@ -161,7 +161,9 @@ export async function analyzeTransactionSignals(
     findings.push({
       accountRef: item.accountRef,
       score: item.score,
-      reasons: item.reasons.map((reason) => reason.trim()),
+      reasons: item.reasons.map((reason: unknown) =>
+        (reason as string).trim(),
+      ),
     });
   }
 

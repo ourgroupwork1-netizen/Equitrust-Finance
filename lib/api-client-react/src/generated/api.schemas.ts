@@ -306,3 +306,8 @@ export type ForbiddenResponse = Error;
  */
 export type NotFoundResponse = Error;
 
+/**
+ * OpenAI analysis could not be completed; no scan report was saved
+ */
+export type OpenAIUnavailableResponse = Error;
+
