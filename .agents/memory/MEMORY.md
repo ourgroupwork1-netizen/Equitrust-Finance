@@ -1,1 +1,2 @@
 - [Equitrust fraud screening](equitrust-fraud-screening.md) — AI review is admin-triggered; send only anonymized transaction fields and keep findings advisory.
+- [Equitrust currency](equitrust-currency.md) — use Leone (SLE) consistently across balances, transactions, loans, and receipts; don't imply USD.
